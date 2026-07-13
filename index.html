@@ -109,11 +109,74 @@
   .setup-card code{background:#0D1319;padding:2px 6px;border-radius:4px;font-size:12px;}
   .setup-card a{color:var(--info);}
 
+  .login-overlay{
+    position:fixed;inset:0;background:var(--bg);z-index:100;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .login-card{
+    width:100%;max-width:340px;background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:20px;padding:28px 24px;
+  }
+  .login-card h2{margin:0 0 4px;font-size:20px;}
+  .login-card p.sub{margin:0 0 20px;font-size:13px;color:var(--muted);}
+  .login-field{margin-bottom:14px;}
+  .login-field label{display:block;font-size:11px;color:var(--muted);margin-bottom:6px;
+    font-family:var(--mono);text-transform:uppercase;letter-spacing:0.04em;}
+  .login-field input{width:100%;background:#0D1319;border:1px solid var(--panel-border);color:var(--text);
+    padding:11px 12px;border-radius:8px;font-family:var(--sans);font-size:14px;}
+  .login-field input:focus{outline:none;border-color:var(--info);}
+  .login-btn{width:100%;padding:12px;border-radius:10px;border:none;background:var(--ok);color:#06231A;
+    font-weight:600;font-size:14px;cursor:pointer;font-family:var(--sans);margin-top:4px;}
+  .login-btn:disabled{opacity:0.6;cursor:default;}
+  .login-toggle{margin-top:16px;text-align:center;font-size:13px;color:var(--muted);}
+  .login-toggle button{background:none;border:none;color:var(--info);cursor:pointer;font-size:13px;
+    font-family:var(--sans);padding:0;}
+  .login-error{margin-top:12px;font-size:12px;color:var(--alert);text-align:center;min-height:14px;}
+
+  .doctor-badge{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-family:var(--mono);}
+  .doctor-badge b{color:var(--text);}
+  .logout-btn{background:none;border:1px solid var(--panel-border);color:var(--muted);
+    border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;font-family:var(--sans);}
+  .logout-btn:hover{color:var(--alert);border-color:var(--alert);}
+
+  .alert-item{display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:10px 0;border-bottom:1px solid #1a2129;}
+  .alert-item:last-child{border-bottom:none;}
+  .alert-item-info{font-size:13px;}
+  .alert-item-info b{font-family:var(--mono);color:var(--alert);}
+  .alert-item-time{font-size:11px;color:var(--muted);font-family:var(--mono);}
+  .mark-read-btn{background:none;border:1px solid var(--panel-border);color:var(--muted);
+    border-radius:6px;padding:5px 9px;font-size:11px;cursor:pointer;font-family:var(--sans);white-space:nowrap;}
+  .mark-read-btn:hover{color:var(--ok);border-color:var(--ok);}
+  .alert-badge{background:var(--alert);color:#fff;font-family:var(--mono);font-size:11px;
+    padding:2px 7px;border-radius:20px;margin-left:6px;}
+
   ::-webkit-scrollbar{width:6px;height:6px;}
   ::-webkit-scrollbar-thumb{background:var(--panel-border);border-radius:4px;}
 </style>
 </head>
 <body>
+
+<div class="login-overlay" id="loginOverlay" style="display:none;">
+  <div class="login-card">
+    <h2 id="loginTitle">Acceso de doctor</h2>
+    <p class="sub" id="loginSub">Inicia sesión para monitorear pacientes y gestionar alertas.</p>
+    <div class="login-field">
+      <label>Correo</label>
+      <input type="email" id="loginEmail" placeholder="doctor@correo.com" autocomplete="email">
+    </div>
+    <div class="login-field">
+      <label>Contraseña</label>
+      <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="login-btn" id="loginSubmitBtn">Iniciar sesión</button>
+    <div class="login-toggle">
+      <span id="loginToggleText">¿Primera vez aquí?</span>
+      <button id="loginToggleBtn">Crear cuenta</button>
+    </div>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
 
 <div class="topbar">
   <div class="brand">
@@ -121,8 +184,10 @@
     <div class="brand-text"><b>MONITOR</b> · BPM en vivo</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
+    <div class="doctor-badge" id="doctorBadge" style="display:none;">🩺 <b id="doctorEmail"></b></div>
     <select id="patientSelect"><option value="">Cargando pacientes…</option></select>
     <button class="rename-btn" id="renameBtn" title="Renombrar paciente actual">✎</button>
+    <button class="logout-btn" id="logoutBtn" title="Cerrar sesión" style="display:none;">⏻</button>
   </div>
 </div>
 
@@ -174,6 +239,11 @@
   </div>
 
   <div class="card">
+    <h3>Alertas <span class="alert-badge" id="alertUnreadBadge" style="display:none;">0</span></h3>
+    <div id="alertsList" style="font-size:13px;color:var(--muted);">Inicia sesión para ver tus alertas.</div>
+  </div>
+
+  <div class="card">
     <h3>Historial reciente</h3>
     <table>
       <thead><tr><th>Hora</th><th>BPM</th></tr></thead>
@@ -191,24 +261,27 @@
    Firebase console → ⚙ Configuración del proyecto → Tus apps → SDK
    ============================================================ */
 const firebaseConfig = {
-  apiKey: "AIzaSyAwSHYsB8fhqWLH-PWBc9R_fIjThir-1Qc",
-  authDomain: "monitor-bpm.firebaseapp.com",
+  apiKey: "",
+  authDomain: "",
   projectId: "monitor-bpm",
-  storageBucket: "monitor-bpm.firebasestorage.app",
-  messagingSenderId: "366583170804",
-  appId: "1:366583170804:web:356bd5dd47a80ff83900a1"
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
 };
 
 const DEMO_MODE = !firebaseConfig.apiKey;
 
 let db, auth;
+let currentUser = null;
 let currentPatientId = null;
 let currentPatientName = "";
 let unsubscribeRecords = null;
+let unsubscribeAlerts = null;
 let chart;
 const chartLabels = [];
 const chartData = [];
 const MAX_POINTS = 30;
+const alertedRecordIds = new Set(); // evita re-escribir la misma alerta varias veces
 
 // ---------- UI refs ----------
 const connDot = document.getElementById('connDot');
@@ -224,6 +297,19 @@ const thMin = document.getElementById('thMin');
 const thMax = document.getElementById('thMax');
 const setupCard = document.getElementById('setupCard');
 const renameBtn = document.getElementById('renameBtn');
+const loginOverlay = document.getElementById('loginOverlay');
+const loginEmail = document.getElementById('loginEmail');
+const loginPassword = document.getElementById('loginPassword');
+const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+const loginToggleBtn = document.getElementById('loginToggleBtn');
+const loginToggleText = document.getElementById('loginToggleText');
+const loginTitle = document.getElementById('loginTitle');
+const loginError = document.getElementById('loginError');
+const doctorBadge = document.getElementById('doctorBadge');
+const doctorEmail = document.getElementById('doctorEmail');
+const logoutBtn = document.getElementById('logoutBtn');
+const alertsList = document.getElementById('alertsList');
+const alertUnreadBadge = document.getElementById('alertUnreadBadge');
 
 if (!DEMO_MODE) setupCard.style.display = 'none';
 
@@ -269,7 +355,7 @@ function pushChartPoint(bpm, label){
 }
 
 // ---------- Alert logic ----------
-function applyReading(bpm, dateObj){
+function applyReading(bpm, dateObj, recordId){
   const min = parseInt(thMin.value || 60, 10);
   const max = parseInt(thMax.value || 100, 10);
   const isAlert = bpm < min || bpm > max;
@@ -288,6 +374,32 @@ function applyReading(bpm, dateObj){
   lastUpdate.textContent = 'Última lectura: ' + timeStr;
   pushChartPoint(bpm, timeStr);
   prependHistoryRow(bpm, timeStr, isAlert);
+
+  if (isAlert && recordId) persistAlert(recordId, bpm, dateObj, min, max);
+}
+
+// Guarda la alerta en Firestore una sola vez por lectura (usa el mismo ID
+// del registro de bpm_records como ID del documento de alerta, así nunca
+// se duplica aunque el snapshot se vuelva a disparar).
+function persistAlert(recordId, bpm, dateObj, min, max){
+  if (DEMO_MODE || !db || !currentPatientId || !currentUser) return;
+  if (alertedRecordIds.has(recordId)) return;
+  alertedRecordIds.add(recordId);
+
+  db.collection('alerts').doc(recordId).set({
+    bpm: bpm,
+    patientId: currentPatientId,
+    patientName: currentPatientName,
+    doctorId: currentUser.uid,
+    rango: { min, max },
+    read: false,
+    timestamp: dateObj
+  }, { merge: true }).catch(err => {
+    // "permission-denied" aquí normalmente significa que esta alerta ya fue
+    // registrada antes por OTRO doctor (las reglas solo dejan actualizarla
+    // al doctor dueño). No afecta el resto de la app.
+    console.warn('No se pudo persistir la alerta', recordId, err.code || err);
+  });
 }
 
 function prependHistoryRow(bpm, timeStr, isAlert){
@@ -304,8 +416,122 @@ async function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
   auth = firebase.auth();
-  await auth.signInAnonymously();
-  await loadPatients();
+
+  auth.onAuthStateChanged(user => {
+    currentUser = user;
+    if (user){
+      loginOverlay.style.display = 'none';
+      doctorBadge.style.display = 'flex';
+      doctorEmail.textContent = user.email || 'doctor';
+      logoutBtn.style.display = 'inline-block';
+      alertedRecordIds.clear();
+      loadPatients();
+      loadAlertsFeed();
+    } else {
+      loginOverlay.style.display = 'flex';
+      doctorBadge.style.display = 'none';
+      logoutBtn.style.display = 'none';
+      if (unsubscribeRecords) unsubscribeRecords();
+      if (unsubscribeAlerts) unsubscribeAlerts();
+      alertsList.innerHTML = 'Inicia sesión para ver tus alertas.';
+      alertUnreadBadge.style.display = 'none';
+    }
+  });
+}
+
+// ---------- Login / registro de doctores ----------
+let isRegisterMode = false;
+
+function setLoginMode(register){
+  isRegisterMode = register;
+  loginTitle.textContent = register ? 'Crear cuenta de doctor' : 'Acceso de doctor';
+  loginSubmitBtn.textContent = register ? 'Crear cuenta' : 'Iniciar sesión';
+  loginToggleText.textContent = register ? '¿Ya tienes cuenta?' : '¿Primera vez aquí?';
+  loginToggleBtn.textContent = register ? 'Iniciar sesión' : 'Crear cuenta';
+  loginError.textContent = '';
+}
+
+loginToggleBtn.addEventListener('click', () => setLoginMode(!isRegisterMode));
+
+function traducirErrorAuth(code){
+  const map = {
+    'auth/invalid-email': 'Correo inválido.',
+    'auth/user-not-found': 'No existe una cuenta con ese correo.',
+    'auth/wrong-password': 'Contraseña incorrecta.',
+    'auth/invalid-credential': 'Correo o contraseña incorrectos.',
+    'auth/email-already-in-use': 'Ya existe una cuenta con ese correo.',
+    'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres.'
+  };
+  return map[code] || 'Ocurrió un error. Intenta de nuevo.';
+}
+
+loginSubmitBtn.addEventListener('click', async () => {
+  const email = loginEmail.value.trim();
+  const pass = loginPassword.value;
+  if (!email || !pass){ loginError.textContent = 'Completa correo y contraseña.'; return; }
+  loginSubmitBtn.disabled = true;
+  loginError.textContent = '';
+  try {
+    if (isRegisterMode){
+      const cred = await auth.createUserWithEmailAndPassword(email, pass);
+      await db.collection('users').doc(cred.user.uid).set({
+        email, role: 'doctor', createdAt: new Date()
+      }, { merge: true });
+    } else {
+      await auth.signInWithEmailAndPassword(email, pass);
+    }
+  } catch (err){
+    loginError.textContent = traducirErrorAuth(err.code);
+  }
+  loginSubmitBtn.disabled = false;
+});
+
+logoutBtn.addEventListener('click', () => auth.signOut());
+
+// ---------- Feed de alertas del doctor logueado ----------
+function loadAlertsFeed(){
+  if (unsubscribeAlerts) unsubscribeAlerts();
+  unsubscribeAlerts = db.collection('alerts')
+    .where('doctorId', '==', currentUser.uid)
+    .orderBy('timestamp', 'desc')
+    .limit(20)
+    .onSnapshot(snap => {
+      if (snap.empty){
+        alertsList.innerHTML = 'Sin alertas registradas todavía.';
+        alertUnreadBadge.style.display = 'none';
+        return;
+      }
+      let unread = 0;
+      alertsList.innerHTML = '';
+      snap.forEach(doc => {
+        const a = doc.data();
+        if (!a.read) unread++;
+        const dateObj = a.timestamp && a.timestamp.toDate ? a.timestamp.toDate() : new Date();
+        const timeStr = dateObj.toLocaleString('es-PE', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+        const row = document.createElement('div');
+        row.className = 'alert-item';
+        row.innerHTML = `<div class="alert-item-info"><b>${a.bpm} BPM</b> — ${a.patientName || 'Paciente'}<br>
+          <span class="alert-item-time">${timeStr}${a.read ? ' · leída' : ''}</span></div>`;
+        if (!a.read){
+          const btn = document.createElement('button');
+          btn.className = 'mark-read-btn';
+          btn.textContent = 'Marcar leída';
+          btn.addEventListener('click', () => {
+            db.collection('alerts').doc(doc.id).update({ read: true }).catch(err => console.error(err));
+          });
+          row.appendChild(btn);
+        }
+        alertsList.appendChild(row);
+      });
+      alertUnreadBadge.style.display = unread > 0 ? 'inline-block' : 'none';
+      alertUnreadBadge.textContent = unread;
+    }, err => {
+      console.error('Error leyendo alertas:', err);
+      // Si sale "failed-precondition" la primera vez, Firestore pide crear un
+      // índice compuesto (doctorId + timestamp) — el error trae un link directo
+      // para crearlo con un click, luego de eso funciona normal.
+      alertsList.innerHTML = 'No se pudieron cargar las alertas (revisa la consola, F12).';
+    });
 }
 
 async function loadPatients(){
@@ -335,6 +561,7 @@ function selectPatient(patientId, name){
 
   chartLabels.length = 0; chartData.length = 0; chart.update();
   historyBody.innerHTML = '<tr class="empty-row"><td colspan="2">Sin registros todavía</td></tr>';
+  alertedRecordIds.clear();
 
   if (unsubscribeRecords) unsubscribeRecords();
   unsubscribeRecords = db.collection('bpm_records').doc(patientId)
@@ -343,13 +570,13 @@ function selectPatient(patientId, name){
     .limit(MAX_POINTS)
     .onSnapshot(snap => {
       const rows = [];
-      snap.forEach(doc => rows.push(doc.data()));
+      snap.forEach(doc => rows.push({ id: doc.id, ...doc.data() }));
       rows.reverse(); // oldest -> newest for the chart
       chartLabels.length = 0; chartData.length = 0;
       historyBody.innerHTML = '';
       rows.forEach(r => {
         const dateObj = r.timestamp && r.timestamp.toDate ? r.timestamp.toDate() : new Date();
-        applyReading(r.bpm, dateObj);
+        applyReading(r.bpm, dateObj, r.id);
       });
       if (rows.length === 0){
         historyBody.innerHTML = '<tr class="empty-row"><td colspan="2">Sin registros todavía</td></tr>';
