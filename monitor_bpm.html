@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Monitor BPM</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiTW9uaXRvciBCUE0iLCJzaG9ydF9uYW1lIjoiQlBNIiwic3RhcnRfdXJsIjoiLiIsImRpc3BsYXkiOiJzdGFuZGFsb25lIiwiYmFja2dyb3VuZF9jb2xvciI6IiMwQTBFMTMiLCJ0aGVtZV9jb2xvciI6IiMwQTBFMTMifQ==">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg:#0A0E13;
+    --panel:#12181F;
+    --panel-border:#1F2933;
+    --text:#E7EDF3;
+    --muted:#7C8B99;
+    --ok:#35E0A1;
+    --ok-dim:#35E0A122;
+    --alert:#FF5470;
+    --alert-dim:#FF547022;
+    --info:#3DA9FC;
+    --mono:'IBM Plex Mono',monospace;
+    --sans:'Inter',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;}
+  body{min-height:100vh;padding-bottom:40px;}
+
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:16px 20px;border-bottom:1px solid var(--panel-border);
+    position:sticky;top:0;background:rgba(10,14,19,0.92);backdrop-filter:blur(8px);z-index:10;
+  }
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);}
+  .brand-dot.off{background:var(--muted);box-shadow:none;}
+  .brand-text{font-family:var(--mono);font-size:13px;letter-spacing:0.08em;color:var(--muted);text-transform:uppercase;}
+  .brand-text b{color:var(--text);}
+
+  select#patientSelect{
+    background:var(--panel);border:1px solid var(--panel-border);color:var(--text);
+    font-family:var(--sans);font-size:13px;padding:8px 12px;border-radius:8px;
+    max-width:180px;
+  }
+  .rename-btn{
+    background:none;border:1px solid var(--panel-border);color:var(--muted);
+    border-radius:8px;padding:8px 10px;font-size:12px;cursor:pointer;font-family:var(--sans);
+  }
+  .rename-btn:hover{color:var(--text);border-color:var(--info);}
+
+  main{max-width:640px;margin:0 auto;padding:20px;display:flex;flex-direction:column;gap:16px;}
+
+  .hero{
+    background:radial-gradient(circle at 30% 20%, #16202966 0%, var(--panel) 70%);
+    border:1px solid var(--panel-border);border-radius:20px;padding:28px 24px;
+    position:relative;overflow:hidden;
+  }
+  .hero.alert-state{border-color:var(--alert);box-shadow:0 0 0 1px var(--alert), 0 0 30px -8px var(--alert);}
+  .hero-top{display:flex;justify-content:space-between;align-items:flex-start;}
+  .patient-name{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;}
+  .patient-name b{color:var(--text);font-size:14px;text-transform:none;letter-spacing:0;display:block;margin-top:2px;}
+  .status-pill{font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:20px;
+    background:var(--ok-dim);color:var(--ok);border:1px solid var(--ok);white-space:nowrap;}
+  .status-pill.alert{background:var(--alert-dim);color:var(--alert);border-color:var(--alert);}
+  .status-pill.idle{background:transparent;color:var(--muted);border-color:var(--panel-border);}
+
+  .bpm-row{display:flex;align-items:flex-end;gap:10px;margin-top:18px;}
+  .bpm-number{font-family:var(--mono);font-weight:700;font-size:76px;line-height:1;color:var(--text);
+    transition:color .3s;}
+  .bpm-number.alert{color:var(--alert);}
+  .bpm-unit{font-family:var(--mono);font-size:16px;color:var(--muted);padding-bottom:12px;}
+
+  .pulse-wrap{margin-top:16px;height:44px;}
+  .pulse-line{width:100%;height:44px;}
+  .pulse-path{fill:none;stroke:var(--ok);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;
+    stroke-dasharray:340;stroke-dashoffset:340;animation:draw 1.6s linear infinite;}
+  .pulse-path.alert{stroke:var(--alert);}
+  @keyframes draw{
+    0%{stroke-dashoffset:340;}
+    100%{stroke-dashoffset:0;}
+  }
+  .last-update{margin-top:10px;font-size:12px;color:var(--muted);font-family:var(--mono);}
+
+  .card{background:var(--panel);border:1px solid var(--panel-border);border-radius:16px;padding:18px;}
+  .card h3{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);font-weight:600;}
+  .chart-wrap{height:200px;}
+
+  .thresholds{display:flex;gap:10px;}
+  .thresh-field{flex:1;}
+  .thresh-field label{display:block;font-size:11px;color:var(--muted);margin-bottom:6px;font-family:var(--mono);}
+  .thresh-field input{width:100%;background:#0D1319;border:1px solid var(--panel-border);color:var(--text);
+    padding:10px;border-radius:8px;font-family:var(--mono);font-size:14px;}
+  .thresh-field input:focus{outline:none;border-color:var(--info);}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;
+    letter-spacing:0.04em;padding:6px 4px;border-bottom:1px solid var(--panel-border);}
+  td{padding:8px 4px;border-bottom:1px solid #1a2129;font-family:var(--mono);}
+  td.bpm-cell.alert{color:var(--alert);font-weight:600;}
+  td.bpm-cell.ok{color:var(--ok);}
+  .empty-row td{color:var(--muted);font-family:var(--sans);text-align:center;padding:20px 4px;}
+
+  .setup-card{border-color:var(--info);}
+  .setup-card code{background:#0D1319;padding:2px 6px;border-radius:4px;font-size:12px;}
+  .setup-card a{color:var(--info);}
+
+  ::-webkit-scrollbar{width:6px;height:6px;}
+  ::-webkit-scrollbar-thumb{background:var(--panel-border);border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-dot off" id="connDot"></div>
+    <div class="brand-text"><b>MONITOR</b> · BPM en vivo</div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <select id="patientSelect"><option value="">Cargando pacientes…</option></select>
+    <button class="rename-btn" id="renameBtn" title="Renombrar paciente actual">✎</button>
+  </div>
+</div>
+
+<main>
+
+  <div class="card setup-card" id="setupCard">
+    <h3>⚠ Configuración requerida</h3>
+    <p style="margin:0 0 8px;font-size:13px;color:var(--muted);line-height:1.5;">
+      Pega la config de tu proyecto Firebase en el archivo, dentro de <code>const firebaseConfig = {...}</code>
+      (la encuentras en la consola de Firebase → ⚙ Configuración del proyecto → Tus apps → SDK de Firebase).
+      Mientras esté vacío, la app se queda en modo demo con datos simulados.
+    </p>
+  </div>
+
+  <div class="hero" id="hero">
+    <div class="hero-top">
+      <div class="patient-name">Paciente<b id="patientLabel">—</b></div>
+      <div class="status-pill idle" id="statusPill">Sin datos</div>
+    </div>
+    <div class="bpm-row">
+      <div class="bpm-number" id="bpmNumber">--</div>
+      <div class="bpm-unit">BPM</div>
+    </div>
+    <div class="pulse-wrap">
+      <svg class="pulse-line" viewBox="0 0 340 44" preserveAspectRatio="none">
+        <path class="pulse-path" id="pulsePath" d="M0,22 L60,22 L75,6 L90,38 L105,22 L340,22"/>
+      </svg>
+    </div>
+    <div class="last-update" id="lastUpdate">Esperando primera lectura…</div>
+  </div>
+
+  <div class="card">
+    <h3>Tendencia (últimas lecturas)</h3>
+    <div class="chart-wrap"><canvas id="bpmChart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h3>Rango de alerta</h3>
+    <div class="thresholds">
+      <div class="thresh-field">
+        <label>Mínimo (BPM)</label>
+        <input type="number" id="thMin" value="60">
+      </div>
+      <div class="thresh-field">
+        <label>Máximo (BPM)</label>
+        <input type="number" id="thMax" value="100">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Historial reciente</h3>
+    <table>
+      <thead><tr><th>Hora</th><th>BPM</th></tr></thead>
+      <tbody id="historyBody">
+        <tr class="empty-row"><td colspan="2">Sin registros todavía</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<script>
+/* ============================================================
+   1) PEGA AQUÍ LA CONFIG DE TU PROYECTO FIREBASE
+   Firebase console → ⚙ Configuración del proyecto → Tus apps → SDK
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyAwSHYsB8fhqWLH-PWBc9R_fIjThir-1Qc",
+  authDomain: "monitor-bpm.firebaseapp.com",
+  projectId: "monitor-bpm",
+  storageBucket: "monitor-bpm.firebasestorage.app",
+  messagingSenderId: "366583170804",
+  appId: "1:366583170804:web:356bd5dd47a80ff83900a1"
+};
+
+const DEMO_MODE = !firebaseConfig.apiKey;
+
+let db, auth;
+let currentPatientId = null;
+let currentPatientName = "";
+let unsubscribeRecords = null;
+let chart;
+const chartLabels = [];
+const chartData = [];
+const MAX_POINTS = 30;
+
+// ---------- UI refs ----------
+const connDot = document.getElementById('connDot');
+const patientSelect = document.getElementById('patientSelect');
+const patientLabel = document.getElementById('patientLabel');
+const bpmNumber = document.getElementById('bpmNumber');
+const statusPill = document.getElementById('statusPill');
+const hero = document.getElementById('hero');
+const pulsePath = document.getElementById('pulsePath');
+const lastUpdate = document.getElementById('lastUpdate');
+const historyBody = document.getElementById('historyBody');
+const thMin = document.getElementById('thMin');
+const thMax = document.getElementById('thMax');
+const setupCard = document.getElementById('setupCard');
+const renameBtn = document.getElementById('renameBtn');
+
+if (!DEMO_MODE) setupCard.style.display = 'none';
+
+// ---------- Chart ----------
+function initChart(){
+  const ctx = document.getElementById('bpmChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: chartLabels,
+      datasets: [{
+        data: chartData,
+        borderColor: '#35E0A1',
+        backgroundColor: 'rgba(53,224,161,0.08)',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.35,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          grid: { color: '#1F2933' },
+          ticks: { color: '#7C8B99', font: { family: 'IBM Plex Mono', size: 10 } },
+          suggestedMin: 40, suggestedMax: 140
+        }
+      }
+    }
+  });
+}
+
+function pushChartPoint(bpm, label){
+  chartLabels.push(label);
+  chartData.push(bpm);
+  if (chartLabels.length > MAX_POINTS){ chartLabels.shift(); chartData.shift(); }
+  chart.update();
+}
+
+// ---------- Alert logic ----------
+function applyReading(bpm, dateObj){
+  const min = parseInt(thMin.value || 60, 10);
+  const max = parseInt(thMax.value || 100, 10);
+  const isAlert = bpm < min || bpm > max;
+
+  bpmNumber.textContent = bpm;
+  bpmNumber.classList.toggle('alert', isAlert);
+  hero.classList.toggle('alert-state', isAlert);
+  pulsePath.classList.toggle('alert', isAlert);
+  statusPill.textContent = isAlert ? 'Fuera de rango' : 'Normal';
+  statusPill.classList.remove('idle');
+  statusPill.classList.toggle('alert', isAlert);
+  statusPill.classList.toggle('ok', !isAlert);
+  connDot.classList.remove('off');
+
+  const timeStr = dateObj.toLocaleTimeString('es-PE', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  lastUpdate.textContent = 'Última lectura: ' + timeStr;
+  pushChartPoint(bpm, timeStr);
+  prependHistoryRow(bpm, timeStr, isAlert);
+}
+
+function prependHistoryRow(bpm, timeStr, isAlert){
+  const emptyRow = historyBody.querySelector('.empty-row');
+  if (emptyRow) emptyRow.remove();
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${timeStr}</td><td class="bpm-cell ${isAlert ? 'alert':'ok'}">${bpm}</td>`;
+  historyBody.prepend(tr);
+  while (historyBody.children.length > 12) historyBody.removeChild(historyBody.lastChild);
+}
+
+// ---------- Firestore wiring ----------
+async function initFirebase(){
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  auth = firebase.auth();
+  await auth.signInAnonymously();
+  await loadPatients();
+}
+
+async function loadPatients(){
+  const snap = await db.collection('bpm_records').get();
+  patientSelect.innerHTML = '';
+  if (snap.empty){
+    patientSelect.innerHTML = '<option value="">Sin pacientes en Firestore</option>';
+    return;
+  }
+  snap.forEach(doc => {
+    const data = doc.data();
+    const label = data.name ? data.name : ('Paciente ' + doc.id.slice(0,6));
+    const opt = document.createElement('option');
+    opt.value = doc.id;
+    opt.textContent = label;
+    opt.dataset.name = label;
+    patientSelect.appendChild(opt);
+  });
+  selectPatient(patientSelect.options[0].value, patientSelect.options[0].dataset.name);
+}
+
+function selectPatient(patientId, name){
+  if (!patientId) return;
+  currentPatientId = patientId;
+  currentPatientName = name || ('Paciente ' + patientId.slice(0,6));
+  patientLabel.textContent = currentPatientName;
+
+  chartLabels.length = 0; chartData.length = 0; chart.update();
+  historyBody.innerHTML = '<tr class="empty-row"><td colspan="2">Sin registros todavía</td></tr>';
+
+  if (unsubscribeRecords) unsubscribeRecords();
+  unsubscribeRecords = db.collection('bpm_records').doc(patientId)
+    .collection('records')
+    .orderBy('timestamp', 'desc')
+    .limit(MAX_POINTS)
+    .onSnapshot(snap => {
+      const rows = [];
+      snap.forEach(doc => rows.push(doc.data()));
+      rows.reverse(); // oldest -> newest for the chart
+      chartLabels.length = 0; chartData.length = 0;
+      historyBody.innerHTML = '';
+      rows.forEach(r => {
+        const dateObj = r.timestamp && r.timestamp.toDate ? r.timestamp.toDate() : new Date();
+        applyReading(r.bpm, dateObj);
+      });
+      if (rows.length === 0){
+        historyBody.innerHTML = '<tr class="empty-row"><td colspan="2">Sin registros todavía</td></tr>';
+      }
+    }, err => {
+      console.error('Error leyendo records:', err);
+      statusPill.textContent = 'Error de lectura';
+      statusPill.className = 'status-pill alert';
+    });
+}
+
+patientSelect.addEventListener('change', (e) => {
+  const opt = e.target.selectedOptions[0];
+  selectPatient(opt.value, opt.dataset.name);
+});
+
+renameBtn.addEventListener('click', async () => {
+  if (!currentPatientId) return;
+  const name = prompt('Nuevo nombre para este paciente:', currentPatientName);
+  if (!name) return;
+  currentPatientName = name;
+  patientLabel.textContent = name;
+  const opt = patientSelect.selectedOptions[0];
+  if (opt){ opt.textContent = name; opt.dataset.name = name; }
+  if (!DEMO_MODE){
+    await db.collection('bpm_records').doc(currentPatientId).set({ name }, { merge: true });
+  }
+});
+
+[thMin, thMax].forEach(inp => inp.addEventListener('change', () => {
+  // re-evaluate the most recent point against the new thresholds
+  if (chartData.length) applyReading(chartData[chartData.length-1], new Date());
+}));
+
+// ---------- Demo mode (no Firebase config yet) ----------
+function runDemo(){
+  patientSelect.innerHTML = '<option>Paciente demo (sin Firebase)</option>';
+  patientLabel.textContent = 'Demo — conecta Firebase arriba';
+  connDot.classList.remove('off');
+  let t = 0;
+  setInterval(() => {
+    t += 1;
+    const base = 75 + Math.sin(t/6)*10;
+    const noise = (Math.random()-0.5)*8;
+    let bpm = Math.round(base + noise);
+    if (t % 14 === 0) bpm = 145; // occasional simulated spike to show alert state
+    applyReading(bpm, new Date());
+  }, 1800);
+}
+
+// ---------- Boot ----------
+initChart();
+if (DEMO_MODE){
+  runDemo();
+} else {
+  initFirebase().catch(err => {
+    console.error(err);
+    statusPill.textContent = 'Error de conexión';
+  });
+}
+</script>
+</body>
+</html>
